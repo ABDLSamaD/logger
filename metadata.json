@@ -1,0 +1,6 @@
+{
+  "name": "Secure JSON Logging Library",
+  "description": "A production-grade, secure, DDoS-protected JSON logging library for Node.js with built-in sanitization, rate-limiting, and deep-object filtering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

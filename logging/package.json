@@ -1,0 +1,22 @@
+{
+  "name": "logging",
+  "version": "1.0.0",
+  "description": "An enterprise-grade, secure, DDoS-protected JSON logger for Node.js written in TypeScript.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "logging",
+    "security",
+    "ddos-protection",
+    "json-logger",
+    "node",
+    "typescript"
+  ],
+  "author": "Google AI Studio Developer",
+  "license": "Apache-2.0"
+}
