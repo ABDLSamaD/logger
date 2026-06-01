@@ -4,13 +4,6 @@ A production-ready, enterprise-grade, secure JSON logging library for Node.js ba
 
 ---
 
-## 📋 Recommended Repository Details for GitHub
-
-- **Repository Name**: `secure-json-logger` (or `node-secure-logger`)
-- **Repository Description**: `A production-grade, secure, DDoS-protected JSON logging library for Node.js with real-time sanitization, token-bucket rate limiting, deep-object stack guards, circular reference resolution, and a beautiful interactive React control panel.`
-
----
-
 ## 🚀 Key Features
 
 ### 🛡️ Core Hardened Back-end Utilities (Zero Dependencies)
