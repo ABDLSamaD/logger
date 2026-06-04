@@ -23,7 +23,8 @@ import {
   Download,
   Plus,
   ShieldAlert,
-  Server
+  Server,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -82,13 +83,59 @@ export default function App() {
   // Status logs feedback
   const [statusFeedback, setStatusFeedback] = useState<string>('Ready to emit and ingest logs.');
 
+  // State for search history dropdown in grep search bar
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('grep_search_history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [showHistoryDropdown, setShowHistoryDropdown] = useState<boolean>(false);
+
+  // Load logs cache on initialization to prevent initial blink or empty states
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('logs_list_cache');
+      if (cached) {
+        setLogsList(JSON.parse(cached));
+      }
+    } catch (e) {
+      console.warn('Failed to restore logs cache:', e);
+    }
+  }, []);
+
+  // Sync logs back to the localStorage client side cache whenever updated
+  useEffect(() => {
+    if (logsList && logsList.length > 0) {
+      localStorage.setItem('logs_list_cache', JSON.stringify(logsList));
+    }
+  }, [logsList]);
+
   // Fetch log list from the backend Express server
   const fetchLogs = async () => {
     try {
       const response = await fetch('/api/logs');
       if (response.ok) {
         const data = await response.json();
-        setLogsList(data);
+        // O(1) fast check to see if logs changed.
+        // It skips redundant state triggers (avoiding React re-renders) if logs are identical.
+        setLogsList(prev => {
+          if (prev && data && prev.length === data.length) {
+            const length = data.length;
+            if (length === 0) return prev;
+            const firstMatch = prev[0].timestamp === data[0].timestamp && 
+                               prev[0].level === data[0].level && 
+                               prev[0].message === data[0].message;
+            const lastMatch = prev[length - 1].timestamp === data[length - 1].timestamp && 
+                              prev[length - 1].level === data[length - 1].level && 
+                              prev[length - 1].message === data[length - 1].message;
+            if (firstMatch && lastMatch) {
+              return prev; // maintains identical reference
+            }
+          }
+          return data;
+        });
       }
     } catch (err) {
       console.error('Failed to poll logs:', err);
@@ -298,19 +345,38 @@ export default function App() {
     }
   };
 
-  // Filter logs locally based on search text and selected level
-  const filteredLogs = logsList.filter(log => {
-    const textMatch = 
-      log.message.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      (log.metadata && JSON.stringify(log.metadata).toLowerCase().includes(searchFilter.toLowerCase())) ||
-      log.level.toLowerCase().includes(searchFilter.toLowerCase());
-    
-    if (levelFilter === 'ALL') return textMatch;
-    return log.level === levelFilter && textMatch;
-  });
+  // Save current search term to history (keeps max 8 unique items, stored in localStorage)
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const term = searchFilter.trim();
+      if (term) {
+        setSearchHistory(prev => {
+          const filtered = prev.filter(item => item !== term);
+          const updated = [term, ...filtered].slice(0, 8);
+          localStorage.setItem('grep_search_history', JSON.stringify(updated));
+          return updated;
+        });
+        setShowHistoryDropdown(false);
+      }
+    }
+  };
 
-  // Calculate current log level analytical counts
-  const getLevelsChartData = () => {
+  // Filter logs locally based on search text and selected level (Memoized for high scroll/rendering performance)
+  const filteredLogs = React.useMemo(() => {
+    const query = searchFilter.toLowerCase();
+    return logsList.filter(log => {
+      const textMatch = 
+        log.message.toLowerCase().includes(query) ||
+        (log.metadata && JSON.stringify(log.metadata).toLowerCase().includes(query)) ||
+        log.level.toLowerCase().includes(query);
+      
+      if (levelFilter === 'ALL') return textMatch;
+      return log.level === levelFilter && textMatch;
+    });
+  }, [logsList, searchFilter, levelFilter]);
+
+  // Calculate current log level analytical counts (Memoized)
+  const chartData = React.useMemo(() => {
     const counts: Record<string, number> = {
       SIMPLE: 0,
       LOG: 0,
@@ -333,9 +399,7 @@ export default function App() {
       name: key,
       value: counts[key],
     }));
-  };
-
-  const chartData = getLevelsChartData();
+  }, [logsList]);
   const totalLogsCount = logsList.length;
 
   const getLevelColor = (level: string) => {
@@ -817,15 +881,65 @@ export default function App() {
 
                 {/* Filters container */}
                 <div className="bg-black/55 border-b border-white/5 px-5 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 font-mono text-xs">
-                  <div className="flex-1 flex items-center bg-[#0d0d0f] border border-white/5 rounded-lg px-2.5 py-1.5">
+                  <div className="flex-1 flex items-center bg-[#0d0d0f] border border-white/5 rounded-lg px-2.5 py-1.5 relative">
                     <span className="text-white/30 mr-2 text-[10px] tracking-wider uppercase font-bold">grep:</span>
                     <input
                       type="text"
                       className="w-full bg-transparent border-none text-white text-xs focus:outline-none placeholder-white/20"
-                      placeholder="Filter records message content..."
+                      placeholder="Filter records... (Press Enter to save to history)"
                       value={searchFilter}
                       onChange={(e) => setSearchFilter(e.target.value)}
+                      onKeyDown={handleSearchKeyDown}
                     />
+
+                    {/* Tiny History button icon toggle inside the input box bar */}
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryDropdown(!showHistoryDropdown)}
+                      className="p-1 text-white/40 hover:text-emerald-400 hover:bg-white/5 rounded transition-colors ml-1"
+                      title="Toggle search history dropdown"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
+
+                    {showHistoryDropdown && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#141416] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden text-xs max-h-48 overflow-y-auto">
+                        <div className="px-3 py-1.5 border-b border-white/5 flex justify-between bg-black/40 text-[9px] uppercase font-bold tracking-widest text-white/40">
+                          <span>Recent Queries</span>
+                          {searchHistory.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchHistory([]);
+                                localStorage.removeItem('grep_search_history');
+                              }}
+                              className="text-red-400 hover:text-red-300 transition-colors uppercase font-mono font-bold cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        {searchHistory.length === 0 ? (
+                          <div className="p-3 text-center text-white/20 italic text-[10.5px]">No query history yet</div>
+                        ) : (
+                          <div className="flex flex-col">
+                            {searchHistory.map((item, idx) => (
+                              <button
+                                key={`${item}-${idx}`}
+                                type="button"
+                                onClick={() => {
+                                  setSearchFilter(item);
+                                  setShowHistoryDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-white/70 hover:bg-white/5 hover:text-emerald-400 transition-colors truncate border-b border-white/5 last:border-b-0 cursor-pointer"
+                              >
+                                {item}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
